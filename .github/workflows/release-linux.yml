@@ -30,13 +30,7 @@ jobs:
       - name: Locate native wrapper
         id: wrapper
         run: |
-          WRAPPER_PATH=$(python - <<'PY'
-from pathlib import Path
-import pylibevp
-
-print(Path(pylibevp.__file__).resolve().parent / "bin" / "libevp_wrapper.so")
-PY
-)
+          WRAPPER_PATH=$(python -c 'from pathlib import Path; import pylibevp; print(Path(pylibevp.__file__).resolve().parent / "bin" / "libevp_wrapper.so")')
           if [ ! -f "$WRAPPER_PATH" ]; then
             echo "Native wrapper not found at $WRAPPER_PATH"
             exit 1
