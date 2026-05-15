@@ -1,4 +1,4 @@
 customtkinter==5.2.2
 darkdetect==0.8.0
 packaging==26.2
-pylibevp @ https://github.com/eudivanmelo/pylibevp/releases/download/v0.1.0/pylibevp-0.1.0-py3-none-any.whl#sha256=bec07755b3b915fcd8bf5d7352ee46ab3156fdb9da44892594968680d0bcab9d
+pylibevp @ https://github.com/eudivanmelo/pylibevp/releases/download/v0.1.1/pylibevp-0.1.0-py3-none-any.whl

@@ -27,7 +27,3 @@ pip install -r requirements.txt
 ```bash
 python run.py
 ```
-
-## Release automático no GitHub Actions
-
-Ao publicar mudanças na branch `main`, o workflow `.github/workflows/release-linux.yml` gera um executável Linux com PyInstaller, empacota em `tar.gz` e cria uma prerelease no GitHub com o artefato anexado.

@@ -1,0 +1,197 @@
+name: Build GUI Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout pylibevp source
+        uses: actions/checkout@v4
+        with:
+          repository: eudivanmelo/pylibevp
+          path: pylibevp-src
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake g++
+
+      - name: Build native wrapper
+        working-directory: pylibevp-src/dvsku_libevp/libevp
+        run: |
+          cmake -S . -B build -DEVP_TEST=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target libevp -j
+          mkdir -p ../../src/pylibevp/bin
+          LIBEVP_A=$(find build -name libevp.a -print -quit)
+          c++ -std=c++20 -fPIC -shared libevp_wrapper.cpp "$LIBEVP_A" \
+            -Iinclude -Ilibraries -I./source \
+            -o ../../src/pylibevp/bin/libevp_wrapper.so
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller customtkinter darkdetect packaging
+          python -m pip install -e pylibevp-src
+
+      - name: Locate native wrapper
+        id: wrapper
+        run: |
+          WRAPPER_PATH=$(python -c 'from pathlib import Path; import pylibevp; print(Path(pylibevp.__file__).resolve().parent / "bin" / "libevp_wrapper.so")')
+          if [ ! -f "$WRAPPER_PATH" ]; then
+            echo "Native wrapper not found at $WRAPPER_PATH"
+            exit 1
+          fi
+          echo "path=$WRAPPER_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Build executable
+        run: |
+          PYTHONPATH=src pyinstaller \
+            --noconfirm \
+            --clean \
+            --onefile \
+            --windowed \
+            --paths src \
+            --collect-all customtkinter \
+            --collect-all darkdetect \
+            --hidden-import pyevp_gui.app \
+            --add-data "${{ steps.wrapper.outputs.path }}:pylibevp/bin" \
+            --name pyevp-gui \
+            run.py
+
+      - name: Package release artifact
+        run: |
+          mkdir -p release
+          tar -C dist -czf release/pyevp-gui-linux-x86_64.tar.gz pyevp-gui
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyevp-gui-linux-x86_64
+          path: release/pyevp-gui-linux-x86_64.tar.gz
+
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout pylibevp source
+        uses: actions/checkout@v4
+        with:
+          repository: eudivanmelo/pylibevp
+          path: pylibevp-src
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up MSVC toolchain
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build native wrapper
+        working-directory: pylibevp-src/dvsku_libevp/libevp
+        shell: pwsh
+        run: |
+          cmake -S . -B build -DEVP_TEST=OFF -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --target libevp --config Release
+          New-Item -ItemType Directory -Force -Path ../../src/pylibevp/bin | Out-Null
+          $libevpLib = Get-ChildItem -Path build -Recurse -Filter libevp.lib | Select-Object -First 1 -ExpandProperty FullName
+          if (-not $libevpLib) {
+            throw "libevp.lib not found"
+          }
+          cl /nologo /std:c++20 /EHsc /LD libevp_wrapper.cpp /I include /I libraries /I .\source $libevpLib /Fe:../../src/pylibevp/bin/libevp_wrapper.dll
+
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller customtkinter darkdetect packaging
+          python -m pip install -e pylibevp-src
+
+      - name: Locate native wrapper
+        id: wrapper
+        shell: pwsh
+        run: |
+          $wrapperPath = (Resolve-Path 'pylibevp-src/src/pylibevp/bin/libevp_wrapper.dll').Path
+          if (-not (Test-Path $wrapperPath)) {
+            throw "Native wrapper not found at $wrapperPath"
+          }
+          "path=$wrapperPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Build executable
+        shell: pwsh
+        run: |
+          $wrapperPath = "${{ steps.wrapper.outputs.path }}"
+          $addData = "$wrapperPath;pylibevp/bin"
+          $env:PYTHONPATH = "src"
+          pyinstaller `
+            --noconfirm `
+            --clean `
+            --onefile `
+            --windowed `
+            --paths src `
+            --collect-all customtkinter `
+            --collect-all darkdetect `
+            --hidden-import pyevp_gui.app `
+            --add-data $addData `
+            --name pyevp-gui `
+            run.py
+
+      - name: Package release artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Compress-Archive -Path dist/pyevp-gui.exe -DestinationPath release/pyevp-gui-windows-x86_64.zip -Force
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyevp-gui-windows-x86_64
+          path: release/pyevp-gui-windows-x86_64.zip
+
+  create-release:
+    runs-on: ubuntu-24.04
+    needs:
+      - build-linux
+      - build-windows
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v0-${GITHUB_RUN_NUMBER}-alpha"
+          gh release create "$TAG" \
+            release-assets/pyevp-gui-linux-x86_64/pyevp-gui-linux-x86_64.tar.gz \
+            release-assets/pyevp-gui-windows-x86_64/pyevp-gui-windows-x86_64.zip \
+            --title "PyEVP GUI build ${GITHUB_RUN_NUMBER}" \
+            --notes "Automated Linux and Windows build generated from commit ${GITHUB_SHA}." \
+            --prerelease \
+            --target "$GITHUB_SHA"
