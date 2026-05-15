@@ -1,0 +1,58 @@
+name: Build Linux Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+
+      - name: Build executable
+        run: |
+          pyinstaller \
+            --noconfirm \
+            --clean \
+            --onefile \
+            --windowed \
+            --collect-all customtkinter \
+            --collect-all darkdetect \
+            --name pyevp-gui \
+            run.py
+
+      - name: Package release artifact
+        run: |
+          mkdir -p release
+          tar -C dist -czf release/pyevp-gui-linux-x86_64.tar.gz pyevp-gui
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="main-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" \
+            release/pyevp-gui-linux-x86_64.tar.gz \
+            --title "PyEVP GUI Linux build ${GITHUB_RUN_NUMBER}" \
+            --notes "Automated Linux build generated from commit ${GITHUB_SHA}." \
+            --prerelease \
+            --target "$GITHUB_SHA"
