@@ -27,6 +27,22 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pyinstaller
 
+      - name: Locate native wrapper
+        id: wrapper
+        run: |
+          WRAPPER_PATH=$(python - <<'PY'
+from pathlib import Path
+import pylibevp
+
+print(Path(pylibevp.__file__).resolve().parent / "bin" / "libevp_wrapper.so")
+PY
+)
+          if [ ! -f "$WRAPPER_PATH" ]; then
+            echo "Native wrapper not found at $WRAPPER_PATH"
+            exit 1
+          fi
+          echo "path=$WRAPPER_PATH" >> "$GITHUB_OUTPUT"
+
       - name: Build executable
         run: |
           PYTHONPATH=src pyinstaller \
@@ -38,6 +54,7 @@ jobs:
             --collect-all customtkinter \
             --collect-all darkdetect \
             --hidden-import pyevp_gui.app \
+            --add-data "${{ steps.wrapper.outputs.path }}:pylibevp/bin" \
             --name pyevp-gui \
             run.py
 
@@ -53,7 +70,7 @@ jobs:
         run: |
           TAG="v0-${GITHUB_RUN_NUMBER}-alpha"
           gh release create "$TAG" \
-            release/pyevp-gui-linux-x86_64.tar.gz \
+            release/pyevp-gui-linux.tar.gz \
             --title "PyEVP GUI Linux build ${GITHUB_RUN_NUMBER}" \
             --notes "Automated Linux build generated from commit ${GITHUB_SHA}." \
             --prerelease \
