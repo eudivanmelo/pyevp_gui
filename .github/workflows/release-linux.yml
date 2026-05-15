@@ -64,7 +64,7 @@ jobs:
         run: |
           TAG="v0-${GITHUB_RUN_NUMBER}-alpha"
           gh release create "$TAG" \
-            release/pyevp-gui-linux.tar.gz \
+            release/pyevp-gui-linux-x86_64.tar.gz \
             --title "PyEVP GUI Linux build ${GITHUB_RUN_NUMBER}" \
             --notes "Automated Linux build generated from commit ${GITHUB_SHA}." \
             --prerelease \
